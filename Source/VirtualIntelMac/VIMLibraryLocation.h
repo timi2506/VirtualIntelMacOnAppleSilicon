@@ -20,5 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSImage *)folderIcon;
 + (BOOL)setURL:(NSURL *)URL error:(NSError **)error;
 + (void)chooseFromWindow:(nullable NSWindow *)window completion:(void (^)(BOOL changed))completion;
++ (NSArray<NSURL *> *)availableExternalVolumes;
++ (NSString *)volumeDescriptionForURL:(NSURL *)URL;
 @end
 NS_ASSUME_NONNULL_END

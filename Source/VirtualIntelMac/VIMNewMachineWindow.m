@@ -1,6 +1,7 @@
 #import "VIMNewMachineWindow.h"
 #import "VIMMachine.h"
 #import "VIMLibraryLocation.h"
+#import "VIMLibraryViewController.h"
 #import "VIMSession.h"
 #import "VIMHostSupport.h"
 #import "VIMInstallerWindow.h"
@@ -218,6 +219,9 @@ static NSURL *InstallerDownloadDirectory(NSURL *source,NSString *library) {
 @property NSStackView *configurationStack;
 @property NSLayoutConstraint *configurationCenterY;
 @property NSGridView *hardwareForm;
+@property NSPopUpButton *locationPopup;
+@property NSURL *selectedLibraryURL;
+@property NSURL *customLibraryURL;
 @property NSStackView *automaticSection;
 @property NSView *passwordFieldContainer;
 @property NSGridRow *usernameRow;
@@ -340,6 +344,11 @@ static VIMNewMachineWindow *creationController;
         NSStackView *memory=[NSStackView stackViewWithViews:@[self.memorySlider,self.memoryField,[NSTextField labelWithString:@"GB"]]];memory.spacing=8;
         NSStackView *cpu=[NSStackView stackViewWithViews:@[self.cpuSlider,self.cpuField,[NSTextField labelWithString:@"cores"]]];cpu.spacing=8;
         NSStackView *disk=[NSStackView stackViewWithViews:@[self.diskField,[NSTextField labelWithString:@"GB"]]];disk.spacing=8;
+        self.locationPopup=[NSPopUpButton new];
+        self.locationPopup.target=self;self.locationPopup.action=@selector(locationChanged:);
+        self.locationPopup.cell.lineBreakMode=NSLineBreakByTruncatingMiddle;
+        [self.locationPopup.widthAnchor constraintEqualToConstant:240].active=YES;
+        [self refreshLocationPopup];
         self.automaticSection=[self automaticSetupSection];
         NSGridView *form=[NSGridView gridViewWithViews:@[
             @[[self configurationLabel:@"Name" symbol:@"desktopcomputer"],self.nameField],
@@ -347,7 +356,8 @@ static VIMNewMachineWindow *creationController;
             @[[self configurationLabel:@"Password" symbol:@"key"],self.passwordFieldContainer],
             @[[self configurationLabel:@"Processors" symbol:@"cpu"],cpu],
             @[[self configurationLabel:@"Memory" symbol:@"memorychip"],memory],
-            @[[self configurationLabel:@"Storage" symbol:@"internaldrive"],disk]]];
+            @[[self configurationLabel:@"Storage" symbol:@"internaldrive"],disk],
+            @[[self configurationLabel:@"Where" symbol:@"externaldrive"],self.locationPopup]]];
         form.rowSpacing=16;form.columnSpacing=14;[form columnAtIndex:0].xPlacement=NSGridCellPlacementLeading;
         self.hardwareForm=form;
         self.usernameRow=[form rowAtIndex:1];self.passwordRow=[form rowAtIndex:2];
@@ -373,6 +383,11 @@ static VIMNewMachineWindow *creationController;
         self.job=[[NSUserDefaults.standardUserDefaults dictionaryForKey:@"VIMCreationJob"] mutableCopy];
         if(self.job&&![CreationGuests() containsObject:self.job[@"Guest"]])self.job=nil;
         if(self.job) {
+            if(self.job[@"Library"]) {
+                self.selectedLibraryURL=[NSURL fileURLWithPath:self.job[@"Library"]];
+                self.customLibraryURL=self.selectedLibraryURL;
+                [self refreshLocationPopup];
+            }
             [self.system selectItemAtIndex:[CreationGuests() indexOfObject:self.job[@"Guest"]]];
             self.nameField.stringValue=self.job[@"Name"]?:@"Mac";self.diskField.stringValue=[self.job[@"Disk"] stringValue]?:@"64";
             self.cpuField.stringValue=[self.job[@"CPU"] stringValue]?:@"4";self.memoryField.stringValue=[self.job[@"Memory"] stringValue]?:@"4";
@@ -726,6 +741,80 @@ static VIMNewMachineWindow *creationController;
     self.window.contentView=self.configuration;
     [self focusConfigurationEditor];
 }
+- (void)refreshLocationPopup {
+    NSPopUpButton *popup=self.locationPopup;if(!popup)return;
+    [popup removeAllItems];
+    NSURL *currentLib=VIMLibraryLocation.currentURL;
+    NSString *defaultTitle=[NSString stringWithFormat:@"%@ (Default)", [VIMLibraryLocation volumeDescriptionForURL:currentLib]];
+    [popup addItemWithTitle:defaultTitle];
+    popup.lastItem.representedObject=currentLib;popup.lastItem.tag=0;
+    NSImage *defIcon=VIMLibraryLocation.folderIcon;defIcon.size=NSMakeSize(16,16);popup.lastItem.image=defIcon;
+    NSArray<NSURL *> *external=VIMLibraryLocation.availableExternalVolumes;
+    for(NSURL *vol in external) {
+        NSURL *extLib=[vol URLByAppendingPathComponent:@"Virtual Intel Mac" isDirectory:YES];
+        if([extLib.URLByResolvingSymlinksInPath.path isEqual:currentLib.URLByResolvingSymlinksInPath.path])continue;
+        [popup addItemWithTitle:[VIMLibraryLocation volumeDescriptionForURL:vol]];
+        popup.lastItem.representedObject=extLib;popup.lastItem.tag=1;
+        NSImage *icon=[NSWorkspace.sharedWorkspace iconForFile:vol.path].copy;icon.size=NSMakeSize(16,16);popup.lastItem.image=icon;
+    }
+    if(self.customLibraryURL) {
+        BOOL alreadyInList=NO;
+        for(NSMenuItem *item in popup.itemArray) {
+            if([((NSURL *)item.representedObject).URLByResolvingSymlinksInPath.path isEqual:self.customLibraryURL.URLByResolvingSymlinksInPath.path]) {
+                alreadyInList=YES;break;
+            }
+        }
+        if(!alreadyInList) {
+            [popup addItemWithTitle:[VIMLibraryLocation volumeDescriptionForURL:self.customLibraryURL]];
+            popup.lastItem.representedObject=self.customLibraryURL;popup.lastItem.tag=3;
+            NSImage *icon=[NSWorkspace.sharedWorkspace iconForFile:self.customLibraryURL.path].copy;icon.size=NSMakeSize(16,16);popup.lastItem.image=icon;
+        }
+    }
+    [popup.menu addItem:NSMenuItem.separatorItem];
+    [popup addItemWithTitle:@"Other Folder…"];popup.lastItem.tag=2;
+    [self selectLocationPopupItemForURL:self.selectedLibraryURL?:currentLib];
+}
+- (void)selectLocationPopupItemForURL:(NSURL *)url {
+    NSString *targetPath=url.URLByResolvingSymlinksInPath.path;
+    for(NSMenuItem *item in self.locationPopup.itemArray) {
+        if([item.representedObject isKindOfClass:NSURL.class]&&[((NSURL *)item.representedObject).URLByResolvingSymlinksInPath.path isEqual:targetPath]) {
+            [self.locationPopup selectItem:item];return;
+        }
+    }
+    [self.locationPopup selectItemAtIndex:0];
+}
+- (void)locationChanged:(NSPopUpButton *)sender {
+    if(sender.selectedItem.tag==2) {
+        NSOpenPanel *panel=[NSOpenPanel openPanel];
+        panel.canChooseDirectories=YES;panel.canChooseFiles=NO;panel.canCreateDirectories=YES;panel.allowsMultipleSelection=NO;
+        panel.directoryURL=self.selectedLibraryURL?:VIMLibraryLocation.currentURL;
+        panel.prompt=@"Select Folder";
+        panel.message=@"Choose an external drive or folder to store this virtual Mac.";
+        [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response){
+            if(response==NSModalResponseOK) {
+                self.customLibraryURL=panel.URL;
+                self.selectedLibraryURL=panel.URL;
+                [self refreshLocationPopup];
+                [self updateStorageLimitsForSelectedLibrary];
+            } else {
+                [self selectLocationPopupItemForURL:self.selectedLibraryURL?:VIMLibraryLocation.currentURL];
+            }
+        }];
+        return;
+    }
+    if([sender.selectedItem.representedObject isKindOfClass:NSURL.class]) {
+        self.selectedLibraryURL=sender.selectedItem.representedObject;
+        [self updateStorageLimitsForSelectedLibrary];
+    }
+}
+- (void)updateStorageLimitsForSelectedLibrary {
+    NSURL *library=self.selectedLibraryURL?:VIMLibraryLocation.currentURL;
+    if(self.job)self.job[@"Library"]=library.path;
+    NSDictionary *space=[NSFileManager.defaultManager attributesOfFileSystemForPath:library.path error:nil];
+    BOOL roomy=[space[NSFileSystemSize] unsignedLongLongValue]>=(256ULL<<30)&&
+        [space[NSFileSystemFreeSize] unsignedLongLongValue]>=(96ULL<<30);
+    if(!self.job[@"Disk"])self.diskField.stringValue=roomy?@"128":@"64";
+}
 - (void)resetConfigurationUnlessResuming {
     NSUInteger index=(NSUInteger)self.system.indexOfSelectedItem;
     if([self.job[@"Guest"] isEqual:CreationGuests()[index]])return;
@@ -734,7 +823,8 @@ static VIMNewMachineWindow *creationController;
     self.cpuSlider.doubleValue=self.cpuField.doubleValue;
     self.memoryField.doubleValue=MIN(4,self.memorySlider.maxValue);
     self.memorySlider.doubleValue=self.memoryField.doubleValue;
-    NSDictionary *space=[NSFileManager.defaultManager attributesOfFileSystemForPath:VIMLibraryLocation.currentURL.path error:nil];
+    NSURL *currentLib=self.selectedLibraryURL?:VIMLibraryLocation.currentURL;
+    NSDictionary *space=[NSFileManager.defaultManager attributesOfFileSystemForPath:currentLib.path error:nil];
     self.diskField.integerValue=[space[NSFileSystemSize] unsignedLongLongValue]>=(256ULL<<30)&&
         [space[NSFileSystemFreeSize] unsignedLongLongValue]>=(96ULL<<30)?128:64;
     for(NSSwitch *control in @[self.automaticSwitch,self.automaticSharing,self.automaticRemoteLogin,self.automaticLogin])
@@ -851,7 +941,7 @@ static VIMNewMachineWindow *creationController;
         if(self.job[@"AutomaticSetup"]&&!self.job[@"Machine"])[VIMAutomaticSetup removePasswordForIdentifier:self.job[@"Identifier"] error:NULL];
         self.job=nil;
     }
-    if(!self.job){self.job=[@{@"Identifier":NSUUID.UUID.UUIDString,@"Library":VIMLibraryLocation.currentURL.path,@"Guest":guest} mutableCopy];self.overallProgress=0;}
+    if(!self.job){self.job=[@{@"Identifier":NSUUID.UUID.UUIDString,@"Library":(self.selectedLibraryURL?:VIMLibraryLocation.currentURL).path,@"Guest":guest} mutableCopy];self.overallProgress=0;}
     if(automatic) {
         NSError *issue=nil;
         if(![VIMAutomaticSetup savePassword:password identifier:self.job[@"Identifier"] error:&issue]){[self presentCreationError:issue.localizedDescription];return;}
@@ -1246,6 +1336,7 @@ static void VIMRemoveAbandonedPreparation(NSURL *root,NSURL *library,NSString *j
             if(![machine saveSettings:@{@"CPUCount":self.job[@"CPU"]?:@4,@"MemoryMiB":@([self.job[@"Memory"] integerValue]*1024)} error:&settingsError]) {
                 [self setPhase:@"failed"];[self presentCreationError:settingsError.localizedDescription];return;
             }
+            [VIMLibraryViewController registerPackageURL:machine.URL];
             [NSNotificationCenter.defaultCenter postNotificationName:@"VIMLibraryChanged" object:nil];
             self.status.stringValue=[NSString stringWithFormat:@"Your Mac is ready to install %@.",VIMOperatingSystemName(guest)];
             NSError *launchError=nil;

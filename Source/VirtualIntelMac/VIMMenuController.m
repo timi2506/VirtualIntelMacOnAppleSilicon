@@ -79,6 +79,7 @@
         VIMMachine *selected=self.library.selectedMachine;
         if(selected&&self.activeWindow==self.library.view.window) {
             [self.fileMenu addItem:NSMenuItem.separatorItem];
+            NSMenuItem *move=[self add:[NSString stringWithFormat:@"Move “%@”…",selected.name] action:@selector(moveSelectedMachine:) key:@"" to:self.fileMenu target:self.library];move.enabled=![VIMSession isRunningMachine:selected];
             NSMenuItem *remove=[self add:[NSString stringWithFormat:@"Remove “%@”",selected.name] action:@selector(removeSelectedMachine:) key:@"" to:self.fileMenu target:self.library];remove.enabled=![VIMSession isRunningMachine:selected];
         }
         [self.fileMenu addItem:NSMenuItem.separatorItem];

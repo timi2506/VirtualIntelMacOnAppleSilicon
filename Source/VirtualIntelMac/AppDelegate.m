@@ -335,11 +335,27 @@
         NSImage *defaultIcon=[NSWorkspace.sharedWorkspace iconForFile:VIMLibraryLocation.defaultURL.path].copy;
         defaultIcon.size=NSMakeSize(16,16);popup.lastItem.image=defaultIcon;
     }
+    for(NSURL *vol in VIMLibraryLocation.availableExternalVolumes) {
+        NSURL *extLib=[vol URLByAppendingPathComponent:@"Virtual Intel Mac" isDirectory:YES];
+        if([extLib.URLByResolvingSymlinksInPath.path isEqual:VIMLibraryLocation.rootURL.URLByResolvingSymlinksInPath.path])continue;
+        [popup addItemWithTitle:[VIMLibraryLocation volumeDescriptionForURL:vol]];
+        popup.lastItem.representedObject=extLib;popup.lastItem.tag=3;
+        NSImage *icon=[NSWorkspace.sharedWorkspace iconForFile:vol.path].copy;
+        icon.size=NSMakeSize(16,16);popup.lastItem.image=icon;
+    }
     [popup addItemWithTitle:@"Other…"];popup.lastItem.tag=1;[popup selectItemAtIndex:1];
 }
 - (void)libraryLocationChanged:(NSPopUpButton *)sender {
     if(sender.selectedItem.tag==2) {
         NSError *error=nil;NSURL *URL=VIMLibraryLocation.defaultURL;
+        if([NSFileManager.defaultManager createDirectoryAtURL:URL withIntermediateDirectories:YES attributes:nil error:&error]&&[VIMLibraryLocation setURL:URL error:&error]) {
+            self.window.representedURL=URL;[self.libraryController reloadLibrary];
+        }else VIMPresentError(error,self.settingsWindow);
+        [self refreshLibraryLocationPopup];return;
+    }
+    if(sender.selectedItem.tag==3) {
+        NSURL *URL=sender.selectedItem.representedObject;
+        NSError *error=nil;
         if([NSFileManager.defaultManager createDirectoryAtURL:URL withIntermediateDirectories:YES attributes:nil error:&error]&&[VIMLibraryLocation setURL:URL error:&error]) {
             self.window.representedURL=URL;[self.libraryController reloadLibrary];
         }else VIMPresentError(error,self.settingsWindow);

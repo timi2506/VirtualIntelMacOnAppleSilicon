@@ -105,6 +105,12 @@ static void RelocatedPackage(NSURL *old,NSURL *new,NSString *identifier) {
             known[new.path]=known[old.path];[known removeObjectForKey:old.path];[defaults setObject:known forKey:key];
         }
     }
+    NSMutableArray *registered=[[defaults arrayForKey:@"VIMRegisteredPackages"] mutableCopy]?:[NSMutableArray array];
+    [registered removeObject:old.path];
+    if(![new.path hasPrefix:[VIMLibraryLocation.machinesURL.path stringByAppendingString:@"/"]]) {
+        if(![registered containsObject:new.path])[registered addObject:new.path];
+    }
+    [defaults setObject:registered forKey:@"VIMRegisteredPackages"];
     NSMutableDictionary *job=[[defaults dictionaryForKey:@"VIMCreationJob"] mutableCopy];
     if([job[@"Machine"] isEqual:old.path]){job[@"Machine"]=new.path;[defaults setObject:job forKey:@"VIMCreationJob"];}
     NSString *oldKey=[@"VIMGuestUsername-" stringByAppendingString:old.path],*newKey=[@"VIMGuestUsername-" stringByAppendingString:new.path];
@@ -416,6 +422,46 @@ static BOOL RemovePreparedMedia(NSString *path,NSURL *owner) {
     NSMutableDictionary *pending=[[NSDictionary dictionaryWithContentsOfURL:URL] mutableCopy]?:[NSMutableDictionary dictionary];pending[@"RequestedBundleName"]=name;
     BOOL saved=Save(pending,URL,error);close(fd);
     return saved&&[self applyPendingChanges:error];
+}
+- (BOOL)moveToDirectory:(NSURL *)destinationDirectory error:(NSError **)error {
+    NSNumber *isDir=nil;
+    if(!destinationDirectory.isFileURL||![destinationDirectory getResourceValue:&isDir forKey:NSURLIsDirectoryKey error:error]||!isDir.boolValue) {
+        return Fail(error,@"The chosen destination is not a valid folder.");
+    }
+    destinationDirectory=destinationDirectory.URLByResolvingSymlinksInPath;
+    NSURL *oldURL=self.URL.URLByResolvingSymlinksInPath;
+    if([destinationDirectory.path isEqual:oldURL.URLByDeletingLastPathComponent.path])return YES;
+    NSURL *destinationURL=[destinationDirectory URLByAppendingPathComponent:oldURL.lastPathComponent];
+    if([NSFileManager.defaultManager fileExistsAtPath:destinationURL.path]) {
+        return Fail(error,[NSString stringWithFormat:@"An item named “%@” already exists in the destination folder.",oldURL.lastPathComponent]);
+    }
+    NSURL *lock=[oldURL URLByAppendingPathComponent:@"State/Session.lock"];
+    int fd=open(lock.fileSystemRepresentation,O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC,0600);
+    struct stat lockInfo;
+    if(fd<0||fstat(fd,&lockInfo)||!S_ISREG(lockInfo.st_mode)||lockInfo.st_nlink!=1||flock(fd,LOCK_EX|LOCK_NB)) {
+        if(fd>=0)close(fd);return Fail(error,@"Stop this virtual Mac before moving it.");
+    }
+    int edit=ConfigurationLock(oldURL,error);
+    if(edit<0){close(fd);return NO;}
+    uint64_t totalSize=0;
+    NSDirectoryEnumerator *enumerator=[NSFileManager.defaultManager enumeratorAtURL:oldURL includingPropertiesForKeys:@[NSURLTotalFileAllocatedSizeKey,NSURLFileSizeKey] options:0 errorHandler:nil];
+    for(NSURL *file in enumerator) {
+        NSNumber *sz=nil;[file getResourceValue:&sz forKey:NSURLTotalFileAllocatedSizeKey error:nil];
+        if(!sz)[file getResourceValue:&sz forKey:NSURLFileSizeKey error:nil];
+        totalSize+=sz.unsignedLongLongValue;
+    }
+    NSDictionary *destSpace=[NSFileManager.defaultManager attributesOfFileSystemForPath:destinationDirectory.path error:nil];
+    uint64_t free=[destSpace[NSFileSystemFreeSize] unsignedLongLongValue];
+    if(free<totalSize+(512ULL<<20)) {
+        close(edit);close(fd);
+        return Fail(error,[NSString stringWithFormat:@"The destination drive needs at least %@ of free space.",
+            [NSByteCountFormatter stringFromByteCount:totalSize countStyle:NSByteCountFormatterCountStyleFile]]);
+    }
+    close(edit);close(fd);
+    if(![NSFileManager.defaultManager moveItemAtURL:oldURL toURL:destinationURL error:error])return NO;
+    _URL=destinationURL;
+    RelocatedPackage(oldURL,destinationURL,self.configuration[@"Identifier"]);
+    return YES;
 }
 - (BOOL)saveAutomaticSetup:(NSDictionary *)profile error:(NSError **)error {
     if(![VIMAutomaticSetup supportsGuest:self.guest]||![self.configuration[@"InstallState"] isEqual:@"installing"]||

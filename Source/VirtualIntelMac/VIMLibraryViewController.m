@@ -226,6 +226,8 @@ static NSString *VIMLibraryResources(VIMMachine *machine) {
     self.machines=@[];self.visibleMachines=@[];
     for(NSString *name in @[@"VIMLibraryChanged",@"VIMMachineRelocated",NSApplicationDidBecomeActiveNotification])
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh:) name:name object:nil];
+    for(NSNotificationName name in @[NSWorkspaceDidMountNotification,NSWorkspaceDidUnmountNotification,NSWorkspaceDidRenameVolumeNotification])
+        [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(refresh:) name:name object:nil];
     [self reloadLibrary];
 }
 - (void)viewDidAppear {
@@ -266,7 +268,10 @@ static NSString *VIMLibraryResources(VIMMachine *machine) {
     }
     return item;
 }
-- (void)dealloc {[NSNotificationCenter.defaultCenter removeObserver:self];}
+- (void)dealloc {
+    [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
 - (void)changeDensity:(NSSegmentedControl *)sender {
     self.compact=sender.selectedSegment==1;
     [NSUserDefaults.standardUserDefaults setBool:self.compact forKey:@"VIMCompactLibrary"];
@@ -319,11 +324,66 @@ static NSString *VIMLibraryResources(VIMMachine *machine) {
 - (void)showLibrary {self.wantsLibraryWindow=YES;self.libraryRequestedExplicitly=YES;[self reloadLibrary];}
 - (NSString *)catalogKey {return [@"VIMLibraryKnown-" stringByAppendingString:VIMLibraryLocation.currentURL.path];}
 - (NSString *)orderKey {return [@"VIMLibraryOrder-" stringByAppendingString:VIMLibraryLocation.currentURL.path];}
-- (void)registerPackageURL:(NSURL *)URL {
++ (void)registerPackageURL:(NSURL *)URL {
     if(!URL.isFileURL||![URL.pathExtension.lowercaseString isEqual:@"vintelmac"])return;
     NSMutableArray *paths=[[NSUserDefaults.standardUserDefaults arrayForKey:@"VIMRegisteredPackages"] mutableCopy]?:[NSMutableArray array];
     NSString *path=URL.URLByResolvingSymlinksInPath.path;if(![paths containsObject:path])[paths addObject:path];
-    [NSUserDefaults.standardUserDefaults setObject:paths forKey:@"VIMRegisteredPackages"];[self reloadLibrary];
+    [NSUserDefaults.standardUserDefaults setObject:paths forKey:@"VIMRegisteredPackages"];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"VIMLibraryChanged" object:nil];
+}
+- (void)registerPackageURL:(NSURL *)URL {
+    [VIMLibraryViewController registerPackageURL:URL];
+    [self reloadLibrary];
+}
++ (void)moveMachine:(VIMMachine *)machine window:(NSWindow *)window completion:(void (^)(BOOL,NSError *))completion {
+    if(!machine)return;
+    if([VIMSession isRunningMachine:machine]) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"This Mac can’t be moved while running";
+        alert.informativeText=@"Shut down the virtual Mac before moving it.";
+        [alert addButtonWithTitle:@"OK"];VIMSetAppAlertIcon(alert);
+        VIMPresentAlert(alert,window,nil);if(completion)completion(NO,nil);return;
+    }
+    NSOpenPanel *panel=[NSOpenPanel openPanel];
+    panel.canChooseDirectories=YES;panel.canChooseFiles=NO;panel.canCreateDirectories=YES;
+    panel.allowsMultipleSelection=NO;panel.prompt=@"Move Here";
+    panel.message=[NSString stringWithFormat:@"Choose an external drive or folder to move “%@”.",machine.name];
+    [panel beginSheetModalForWindow:window completionHandler:^(NSModalResponse response){
+        if(response!=NSModalResponseOK){if(completion)completion(NO,nil);return;}
+        NSURL *destination=panel.URL;
+        if([destination.URLByResolvingSymlinksInPath.path isEqual:machine.URL.URLByDeletingLastPathComponent.URLByResolvingSymlinksInPath.path]) {
+            if(completion)completion(YES,nil);return;
+        }
+        NSWindow *progressWindow=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,380,110) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+        progressWindow.title=@"Moving Virtual Mac";
+        NSProgressIndicator *indicator=[NSProgressIndicator new];indicator.style=NSProgressIndicatorStyleBar;indicator.indeterminate=YES;[indicator startAnimation:nil];
+        NSTextField *label=[NSTextField labelWithString:[NSString stringWithFormat:@"Moving “%@” to %@…",machine.name,destination.lastPathComponent]];
+        label.font=[NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+        NSTextField *sub=[NSTextField labelWithString:@"This may take a few moments depending on the drive speed."];
+        sub.font=[NSFont systemFontOfSize:11];sub.textColor=NSColor.secondaryLabelColor;
+        NSStackView *stack=[NSStackView stackViewWithViews:@[label,indicator,sub]];
+        stack.orientation=NSUserInterfaceLayoutOrientationVertical;stack.alignment=NSLayoutAttributeLeading;stack.spacing=10;
+        stack.frame=NSMakeRect(24,16,332,74);[progressWindow.contentView addSubview:stack];
+        [window beginSheet:progressWindow completionHandler:nil];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+            NSError *moveError=nil;
+            BOOL ok=[machine moveToDirectory:destination error:&moveError];
+            dispatch_async(dispatch_get_main_queue(),^{
+                [window endSheet:progressWindow];
+                if(!ok)VIMPresentError(moveError,window);
+                else {
+                    [VIMLibraryViewController registerPackageURL:machine.URL];
+                    [NSNotificationCenter.defaultCenter postNotificationName:@"VIMLibraryChanged" object:nil];
+                }
+                if(completion)completion(ok,moveError);
+            });
+        });
+    }];
+}
+- (void)moveSelectedMachine:(id)sender {
+    VIMMachine *machine=self.selected;if(!machine)return;
+    [VIMLibraryViewController moveMachine:machine window:self.view.window completion:^(BOOL ok,NSError *err){
+        if(ok)[self reloadLibrary];
+    }];
 }
 - (void)openExistingMac:(id)sender {
     NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=YES;panel.canChooseFiles=YES;panel.allowsMultipleSelection=YES;
@@ -581,6 +641,7 @@ static NSString *VIMLibraryResources(VIMMachine *machine) {
     [menu addItemWithTitle:@"Configure…" action:@selector(machineSettings:) keyEquivalent:@""].target=self;
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItemWithTitle:@"Rename…" action:@selector(renameMachine:) keyEquivalent:@""].target=self;
+    [menu addItemWithTitle:@"Move to…" action:@selector(moveSelectedMachine:) keyEquivalent:@""].target=self;
     [menu addItemWithTitle:@"Show in Finder" action:@selector(revealMachine:) keyEquivalent:@""].target=self;
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItemWithTitle:@"Delete…" action:@selector(removeSelectedMachine:) keyEquivalent:@""].target=self;
@@ -660,7 +721,7 @@ static NSString *VIMLibraryResources(VIMMachine *machine) {
     });
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
-    if(item.action==@selector(removeSelectedMachine:))return self.selected!=nil&&![VIMSession isRunningMachine:self.selected];
+    if(item.action==@selector(removeSelectedMachine:)||item.action==@selector(moveSelectedMachine:))return self.selected!=nil&&![VIMSession isRunningMachine:self.selected];
     return YES;
 }
 @end

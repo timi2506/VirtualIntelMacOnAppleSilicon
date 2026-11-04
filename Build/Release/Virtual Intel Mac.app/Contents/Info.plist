@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BuildMachineOSBuild</key>
+	<string>26B123</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>Virtual Intel Mac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.mac.virtualintelmac</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Virtual Intel Mac</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.0</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>DTCompiler</key>
+	<string>com.apple.compilers.llvm.clang.1_0</string>
+	<key>DTPlatformBuild</key>
+	<string>26A425</string>
+	<key>DTPlatformName</key>
+	<string>macosx</string>
+	<key>DTPlatformVersion</key>
+	<string>27.0</string>
+	<key>DTSDKBuild</key>
+	<string>26A425</string>
+	<key>DTSDKName</key>
+	<string>macosx27.0</string>
+	<key>DTXcode</key>
+	<string>2700</string>
+	<key>DTXcodeBuild</key>
+	<string>27A266a</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>oscdn.apple.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
+	<key>NSMainNibFile</key>
+	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow your virtual Macs to use this Mac’s microphone when a guest app records audio.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSViewGestureRecognizerIsExclusive</key>
+	<false/>
+	<key>SMPrivilegedExecutables</key>
+	<dict>
+		<key>com.mac.virtualintelmac.network-helper</key>
+		<string>identifier "com.mac.virtualintelmac.network-helper" and certificate leaf = H"8FB98198DD2DA71045F1CE11ED83BA8D59053FE1"</string>
+		<key>com.mac.virtualintelmac.usb-helper</key>
+		<string>identifier "com.mac.virtualintelmac.usb-helper" and certificate leaf = H"8FB98198DD2DA71045F1CE11ED83BA8D59053FE1"</string>
+	</dict>
+	<key>VIMNetworkHelperSourceHash</key>
+	<string>31a73d697576fef9e755ffe00fbfdc06d838371da3b551198dcd4ab201a421bd</string>
+	<key>VIMUSBHelperSourceHash</key>
+	<string>dc476981621f485b5f54ea7753a4301c161b7f691d2172d4f56be9e775dcca2b</string>
+</dict>
+</plist>

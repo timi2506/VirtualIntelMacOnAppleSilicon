@@ -229,4 +229,35 @@ static BOOL PrepareRoot(NSURL *root,NSURL *previousRoot,NSError **error) {
     if (window) [panel beginSheetModalForWindow:window completionHandler:selected];
     else [panel beginWithCompletionHandler:selected];
 }
++ (NSString *)volumeDescriptionForURL:(NSURL *)URL {
+    if (!URL) return @"";
+    NSString *name = nil;
+    [URL getResourceValue:&name forKey:NSURLVolumeLocalizedNameKey error:nil];
+    if (!name.length) [URL getResourceValue:&name forKey:NSURLVolumeNameKey error:nil];
+    if (!name.length) name = URL.lastPathComponent;
+    NSDictionary *space = [NSFileManager.defaultManager attributesOfFileSystemForPath:URL.path error:nil];
+    if (space[NSFileSystemFreeSize]) {
+        uint64_t free = [space[NSFileSystemFreeSize] unsignedLongLongValue];
+        return [NSString stringWithFormat:@"%@ (%@ free)", name, [NSByteCountFormatter stringFromByteCount:free countStyle:NSByteCountFormatterCountStyleFile]];
+    }
+    return name;
+}
++ (NSArray<NSURL *> *)availableExternalVolumes {
+    NSMutableArray<NSURL *> *results = [NSMutableArray array];
+    NSArray<NSURL *> *volumes = [NSFileManager.defaultManager mountedVolumeURLsIncludingResourceValuesForKeys:@[NSURLVolumeLocalizedNameKey, NSURLVolumeNameKey, NSURLVolumeIsRemovableKey, NSURLVolumeIsInternalKey, NSURLVolumeIsReadOnlyKey] options:NSVolumeEnumerationSkipHiddenVolumes];
+    for (NSURL *vol in volumes) {
+        if ([vol.path isEqual:@"/"]) continue;
+        NSNumber *readOnly = nil;
+        if ([vol getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil] && readOnly.boolValue) continue;
+        NSNumber *isInternal = nil;
+        [vol getResourceValue:&isInternal forKey:NSURLVolumeIsInternalKey error:nil];
+        NSNumber *isRemovable = nil;
+        [vol getResourceValue:&isRemovable forKey:NSURLVolumeIsRemovableKey error:nil];
+        if (isInternal.boolValue && !isRemovable.boolValue) continue;
+        if ([NSFileManager.defaultManager isWritableFileAtPath:vol.path]) {
+            [results addObject:vol];
+        }
+    }
+    return results;
+}
 @end

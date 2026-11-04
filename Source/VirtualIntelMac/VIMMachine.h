@@ -38,6 +38,7 @@ NS_ASSUME_NONNULL_BEGIN
     library:(NSURL *)library firmware:(NSURL *)firmware nvram:(NSURL *)nvram
     bootMedia:(NSURL *)bootMedia installer:(NSURL *)installer qemuImage:(NSURL *)qemuImage error:(NSError **)error;
 - (BOOL)rename:(NSString *)name error:(NSError **)error;
+- (BOOL)moveToDirectory:(NSURL *)destinationDirectory error:(NSError **)error;
 - (BOOL)saveSettings:(NSDictionary *)settings error:(NSError **)error;
 /// Pre-first-boot, non-secret policy only; credentials stay private on the host.
 - (BOOL)saveAutomaticSetup:(NSDictionary *)profile error:(NSError **)error;

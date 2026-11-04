@@ -7,6 +7,7 @@
 #import "VIMSMBService.h"
 #import "VIMHostAudio.h"
 #import "VIMAlerts.h"
+#import "VIMLibraryViewController.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -250,7 +251,8 @@ static void VIMAlignFormBaselines(NSView *view) {
     NSBox *divider=[NSBox new];divider.boxType=NSBoxSeparator;
     NSView *storage=[self storageOverview];
     NSButton *reveal=[self button:@"Show in Finder" action:@selector(reveal:)];
-    NSStackView *location=[NSStackView stackViewWithViews:@[VIMText(@"Location:",NO),reveal]];location.spacing=12;
+    NSButton *move=[self button:@"Move…" action:@selector(moveMachineAction:)];
+    NSStackView *location=[NSStackView stackViewWithViews:@[VIMText(@"Location:",NO),reveal,move]];location.spacing=8;
     NSStackView *column=VIMColumn(@[grid,divider,storage,location]);column.spacing=16;
     [divider.widthAnchor constraintEqualToAnchor:column.widthAnchor].active=YES;
     [storage.widthAnchor constraintEqualToAnchor:column.widthAnchor].active=YES;
@@ -405,7 +407,8 @@ static void VIMAlignFormBaselines(NSView *view) {
     NSString *file=[self.machine.configuration[@"Disk"] lastPathComponent]?:@"System.qcow2";
     NSPopUpButton *source=[NSPopUpButton new];[source addItemWithTitle:file];[source.widthAnchor constraintEqualToConstant:250].active=YES;
     NSGridView *grid=[NSGridView gridViewWithViews:@[@[[NSTextField labelWithString:@"Source:"],source]]];grid.columnSpacing=12;
-    return VIMColumn(@[grid,VIMText([self storageSummary],NO),[self button:@"Show in Finder" action:@selector(reveal:)],VIMText(@"Disk capacity is set when the Mac is created. The disk grows on demand up to that capacity.",NO)]);
+    NSStackView *diskActions=[NSStackView stackViewWithViews:@[[self button:@"Show in Finder" action:@selector(reveal:)],[self button:@"Move…" action:@selector(moveMachineAction:)]]];diskActions.spacing=8;
+    return VIMColumn(@[grid,VIMText([self storageSummary],NO),diskActions,VIMText(@"Disk capacity is set when the Mac is created. The disk grows on demand up to that capacity.",NO)]);
 }
 - (NSView *)sharingContentForHost:(BOOL)host {
     BOOL files=self.hardwareIndex==0;
@@ -817,6 +820,16 @@ static void VIMAlignFormBaselines(NSView *view) {
 }
 - (BOOL)windowShouldClose:(NSWindow *)sender {[sender makeFirstResponder:nil];[self saveDescription];return !self.invalidField;}
 - (void)reveal:(id)sender {[NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[self.machine.URL]];}
+- (void)moveMachineAction:(id)sender {
+    [VIMLibraryViewController moveMachine:self.machine window:self.window completion:^(BOOL ok,NSError *err){
+        if(ok) {
+            VIMMachine *fresh=[VIMMachine loadURL:self.machine.URL error:nil];
+            if(fresh)self.machine=fresh;
+            [self render];
+            if(self.completion)self.completion();
+        }
+    }];
+}
 - (void)chooseDisc:(id)sender {[VIMSession chooseOpticalMediaForMachine:self.machine window:self.window];}
 - (void)ejectDisc:(id)sender {[VIMSession ejectOpticalMediaForMachine:self.machine window:self.window];}
 - (void)copyConnection:(NSButton *)sender {[NSPasteboard.generalPasteboard clearContents];[NSPasteboard.generalPasteboard setString:sender.identifier forType:NSPasteboardTypeString];}
