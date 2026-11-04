@@ -260,6 +260,7 @@ static NSMenu *WithToolbarMenuTitle(NSMenu *menu,NSString *title) {
 @property NSTimer *resizeTimer;
 @property NSSize lastRequestedSize;
 @property BOOL resizeArmed;
+@property BOOL installerDisplay;
 @property NSString *displaySizedBoot;
 @property NSString *displaySelectedBoot;
 @property NSDate *displaySelectionRetryAfter;
@@ -703,6 +704,7 @@ static NSMenu *WithToolbarMenuTitle(NSMenu *menu,NSString *title) {
     // the VM receipt or discards its verified graphics transaction.
     BOOL installerDisplay=self.machine.requiresInstallerDisplay||
         [NSProcessInfo.processInfo.arguments containsObject:@"--installer-display"];
+    self.installerDisplay=installerDisplay;
     BOOL openGLDirectDisplay=self.machine.preMetalGuest&&
         [self.machine.configuration[@"LegacyDisplayAdapter"] isEqual:@"vmware"]&&
         self.machine.passthroughOpenGLEnabled;
@@ -2601,7 +2603,7 @@ static NSMenu *WithToolbarMenuTitle(NSMenu *menu,NSString *title) {
             [self.log writeData:[@"\n[Virtual Intel Mac] macOS setup completed; beginning initial graphics installation.\n" dataUsingEncoding:NSUTF8StringEncoding]];
         } else if(claimError)self.guestStatus.stringValue=claimError.localizedDescription;
     }
-    if(!error&&boot.length&&[report[@"SetupComplete"] isEqual:@YES])
+    if(!error&&boot.length&&[report[@"SetupComplete"] isEqual:@YES]&&!self.installerDisplay)
         [self updateBridgeForBoot:boot displayPowerOnly:YES];
     if(!error&&boot.length&&self.clipboardUID&&[report[@"DesktopRunning"] isEqual:@YES]&&![boot isEqual:self.usernameBoot]) {
         // Remote Login needs the guest account's short name. Learn it from the
@@ -3342,13 +3344,13 @@ static NSMenu *WithToolbarMenuTitle(NSMenu *menu,NSString *title) {
         // Settings changes explicitly call updateClipboardForBoot; never read
         // PendingConfiguration.plist from a removable disk in this hot path.
         current.exchangeAllowed=^BOOL{VIMSession *session=weakSelf;return !powerOnly&&session&&session.task.running&&NSApp.active&&session.window.keyWindow&&!session.displayView.displaySleeping&&session.clipboardSharingEnabled;};
-        current.displayPowerChanged=^(BOOL sleeping){if(powerOnly)[weakSelf.displayConnection requestDisplaySleeping:sleeping];};
+        current.displayPowerChanged=^(BOOL sleeping){if(powerOnly&&!weakSelf.installerDisplay)[weakSelf.displayConnection requestDisplaySleeping:sleeping];};
         __weak VIMClipboardBridge *bridge=current;
         current.connectionLost=^{
             VIMSession *session=weakSelf;
             if(!session.task.running||!bridge||(powerOnly?session.powerBridge:session.clipboard)!=bridge)return;
             [bridge stop];
-            if(powerOnly){session.powerBridge=nil;session.powerConfiguredBoot=nil;session.powerRetryAfter=[NSDate dateWithTimeIntervalSinceNow:60];[session.displayConnection requestDisplaySleeping:NO];}
+            if(powerOnly){session.powerBridge=nil;session.powerConfiguredBoot=nil;session.powerRetryAfter=[NSDate dateWithTimeIntervalSinceNow:60];if(!session.installerDisplay)[session.displayConnection requestDisplaySleeping:NO];}
             else {session.clipboard=nil;session.clipboardConfiguredBoot=nil;session.clipboardRetryAfter=[NSDate dateWithTimeIntervalSinceNow:60];}
             if(!powerOnly){session.clipboardUID=nil;session.usernameBoot=nil;}
             // Re-observe the console before provisioning: after logout, the
